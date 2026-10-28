@@ -14,7 +14,9 @@ dependencies = [
     "meshtastic",
     "pyserial",
     "pubsub",
-    "numpy"
+    "numpy",
+    "Flask", 
+    "waitress"
 ]
 
 [project.scripts]

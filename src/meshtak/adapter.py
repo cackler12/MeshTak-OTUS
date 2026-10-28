@@ -1,11 +1,14 @@
 import asyncio, threading
 import meshtak.tak_server as tak_server, meshtak.receiving_node as receiving_node
+import webserver.web_server as web_server
 
 def start_adapter():
     tak_thread = threading.Thread(target=start_tak_server, daemon=True)
     tak_thread.start()
     receiving_thread = threading.Thread(target=start_receiver_node, daemon=True)
     receiving_thread.start()
+    web_server_thread = threading.Thread(target=launch_web_server, daemon=True)
+    web_server.start()
 
     try:
         tak_thread.join()
@@ -23,3 +26,6 @@ def start_tak_server():
 
 def start_receiver_node():
     receiving_node.start()
+
+def launch_web_server():
+    web_server.start()
