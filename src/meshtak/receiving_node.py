@@ -5,6 +5,9 @@ from pubsub import pub
 from meshtak.translator import translate_position_to_cot
 from meshtak.repository import add_track_to_queue
 
+
+is_connected = threading.Event()
+
 def try_connect(port, result):
     try:
         result["interface"] = meshtastic.serial_interface.SerialInterface(
@@ -39,6 +42,7 @@ def find_receiver_node():
             if thread.is_alive():
                 print("Connection timed out")
             else:
+                is_connected.set()
                 return result.get("interface")
 
         except Exception:
@@ -47,7 +51,6 @@ def find_receiver_node():
 
 def on_receive(packet, interface):
     try:
-        print("Received packet:")
         decoded = packet.get("decoded", {})
         if decoded.get("portnum") == "POSITION_APP":
             pos = decoded.get("position", {})
@@ -68,6 +71,17 @@ def on_receive(packet, interface):
 
     except Exception as e:
         print(e)
+        raise e
+
+
+def on_connection_lost(interface, topic=pub.AUTO_TOPIC):
+    is_connected.clear()
+    print("Meshtastic connection lost!")
+
+def stop():
+    is_connected.clear()
+    pub.unsubscribe(on_receive, "meshtastic.receive")
+    pub.unsubscribe(on_connection_lost, "meshtastic.connection.lost")
 
 def start():
     while True:
@@ -77,12 +91,19 @@ def start():
                 print("Failed to find Meshtastic serial conn, retrying in 5 seconds...")
                 time.sleep(5)
                 continue
-
-            pub.subscribe(on_receive, "meshtastic.receive")
-
-            while True:
-                time.sleep(1)
+            else:
+                pub.subscribe(on_receive, "meshtastic.receive")
+                pub.subscribe(on_connection_lost, "meshtastic.connection.lost")
+                while True:
+                    if (is_connected.is_set()):
+                        time.sleep(1)
+                    else:
+                        stop()
+                        break
+                        
+    
 
         except Exception as ex:
-            print(f"Connection lost: {ex}")
+            print(f"Serial connection failed: {ex}")
+            stop()
             time.sleep(5)
