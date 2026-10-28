@@ -18,8 +18,7 @@ mkdir -p $package_name-$version-$arch/DEBIAN
 cp $package_name-$version.tar $package_name-$version-$arch/usr/bin/meshtak/dist
 cp docker/docker-compose.yml $package_name-$version-$arch/usr/bin/meshtak
 cp pkg/meshtak.service $package_name-$version-$arch/usr/bin/meshtak
-cp pkg/setup-service.sh $package_name-$version-$arch/usr/bin/meshtak
-cp pkg/control pkg/postrm pkg/postinst $package_name-$version-$arch/DEBIAN/
+cp pkg/control pkg/prerm pkg/postinst $package_name-$version-$arch/DEBIAN/
 
 dpkg-deb --build $package_name-$version-$arch
 
