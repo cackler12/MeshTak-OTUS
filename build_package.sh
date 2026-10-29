@@ -2,13 +2,13 @@
 
 package_name="meshtak"
 version="0.1.0"
-arch="amd64"
+arch="arm64"
 
 echo "Building docker image"
 
-docker build -t $package_name:latest .
+docker buildx build --platform linux/arm64 --no-cache -t $package_name:arm64 --load .
 
-docker save -o $package_name-$version.tar $package_name:latest
+docker save -o $package_name-$version.tar $package_name:arm64
 
 echo "Building deb package"
 
@@ -33,4 +33,4 @@ rm -rf build/*
 
 mv $package_name-$version-$arch.deb build
 
-docker rmi $package_name:latest
+docker rmi $package_name:arm64
