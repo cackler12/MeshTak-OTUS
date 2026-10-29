@@ -1,109 +1,102 @@
-from serial.tools import list_ports
-import serial, time, threading
-import meshtastic.serial_interface
 from pubsub import pub
-from meshtak.translator import translate_position_to_cot
+import meshtastic, threading
+from time import sleep
+from meshtastic import serial_interface
+from meshtak.translator import translate_meshtastic_position_to_tak_track
 from meshtak.repository import add_track_to_queue
 
+class RecieverNode:
 
-is_connected = threading.Event()
+    def __init__(self):
+        self.__interface = None
+        self.__connected = threading.Event()
 
-def try_connect(port, result):
-    try:
-        result["interface"] = meshtastic.serial_interface.SerialInterface(
-            devPath=port
-        )
-    except Exception as e:
-        result["error"] = e
+        pub.subscribe(self.on_receive, "meshtastic.receive")
+        pub.subscribe(self.on_connection_established, "meshtastic.connection.established")
+        pub.subscribe(self.on_connection_lost, "meshtastic.connection.lost")
 
-def find_receiver_node():
-    for port in list_ports.comports():
+    def try_to_connect(self):
+        if self.__interface is not None:
+            return
         try:
-            print(f"Trying {port.device}...")
-            ser = serial.Serial(
-                port=port.device,
-                baudrate=115200,
-                timeout=2
-            )
-            print("Port opened")
-            ser.close()
+            print("Listening for a meshtastic device...")
+            self.__interface = meshtastic.serial_interface.SerialInterface()
+        except Exception as e:
+            print(f"Failed to connect to a meshtastic device: {e}")
+            self.__interface = None
+            self.__connected.clear()
 
-            result = {}
+    def try_to_close(self):
+        interface = self.__interface
 
-            thread = threading.Thread(
-                target=try_connect,
-                args=(port.device, result),
-                daemon=True
-            )
+        self.__interface = None
+        self.__connected.clear()
 
-            thread.start()
-            thread.join(timeout=5)
+        if interface is not None:
+            try:
+                interface.close()
+            except Exception as e:
+                print(f"Error while closing interface: {e}")
 
-            if thread.is_alive():
-                print("Connection timed out")
-            else:
-                is_connected.set()
-                return result.get("interface")
-
-        except Exception:
-            pass
-    return None
-
-def on_receive(packet, interface):
-    try:
-        decoded = packet.get("decoded", {})
-        if decoded.get("portnum") == "POSITION_APP":
-            pos = decoded.get("position", {})
-
-            latitude = pos.get("latitude")
-            longitude = pos.get("longitude")
-            altitude = pos.get("altitude")
-            time = pos.get("time")
-            from_id = packet.get("fromId")
-
-            track = translate_position_to_cot(
-                lattitude=latitude, 
-                longitude=longitude, 
-                altitude=altitude, 
-                fromId=from_id, 
-                track_time=time)
-            add_track_to_queue(track=track)
-
-    except Exception as e:
-        print(e)
-        raise e
-
-
-def on_connection_lost(interface, topic=pub.AUTO_TOPIC):
-    is_connected.clear()
-    print("Meshtastic connection lost!")
-
-def stop():
-    is_connected.clear()
-    pub.unsubscribe(on_receive, "meshtastic.receive")
-    pub.unsubscribe(on_connection_lost, "meshtastic.connection.lost")
-
-def start():
-    while True:
-        try:
-            interface = find_receiver_node()
-            if interface == None:
-                print("Failed to find Meshtastic serial conn, retrying in 5 seconds...")
-                time.sleep(5)
-                continue
-            else:
-                pub.subscribe(on_receive, "meshtastic.receive")
-                pub.subscribe(on_connection_lost, "meshtastic.connection.lost")
-                while True:
-                    if (is_connected.is_set()):
-                        time.sleep(1)
+    def on_receive(self, packet, interface):
+        if interface is self.__interface:
+            decoded = packet.get("decoded", {})
+            match decoded.get("portnum"):
+                case "POSITION_APP":
+                    from_id = packet.get("fromId")
+                    if from_id:
+                        node_info = self.__interface.nodes.get(from_id)
+                        if node_info:
+                            user = node_info.get("user", {})
+                            short_name = user.get("shortName", from_id[-4:])
+                        else:
+                            short_name = from_id[-4:]
+                        pos = decoded.get("position", {})
+                        latitude = pos.get("latitude")
+                        longitude = pos.get("longitude")
+                        altitude = pos.get("altitude")
+                        timestamp = pos.get("time")
+                        add_track_to_queue(
+                            translate_meshtastic_position_to_tak_track(from_id, short_name, latitude, longitude, altitude, timestamp)
+                        )
                     else:
-                        stop()
-                        break
+                        print("Dropping position message, no fromId!")
                         
-    
+                case "SERIAL_APP":
+                    print("Received a serial packet!")
+                
 
-        except Exception as ex:
-            print(f"Serial connection failed: {ex}")
-            stop()
-            time.sleep(5)
+    def on_connection_established(self, interface, topic=pub.AUTO_TOPIC):
+        if interface is self.__interface:
+            self.__connected.set()
+            print("Successfully connected to meshtastic device!")
+
+    def on_connection_lost(self, interface, topic=pub.AUTO_TOPIC):
+        if interface is self.__interface:
+            self.__connected.clear()
+            print("Lost connection to meshtastic device!")
+
+    def start(self):
+        while True:
+            try:
+                if self.__interface == None:
+                    self.try_to_connect()
+                    if self.__interface == None:
+                        print("Retrying meshtastic connection in 5 seconds...")
+                        sleep(5)
+                        continue
+                
+                if not self.__connected.wait(timeout=10):
+                    print("Meshtastic connection timed out...")
+                    self.try_to_close()
+                    sleep(5)
+                    continue
+                while self.__connected.is_set():
+                    sleep(1)
+                self.try_to_close()
+                sleep(5)
+            except Exception as e:
+                print("An exception occured while listening to meshtastic device, restarting in 5 seconds...")
+                self.try_to_close()
+                sleep(5)
+        
