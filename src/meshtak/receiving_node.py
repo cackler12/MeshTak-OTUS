@@ -4,6 +4,7 @@ from time import sleep
 from meshtastic import serial_interface
 from meshtak.translator import translate_meshtastic_position_to_tak_track
 from meshtak.repository import add_track_to_queue
+from datetime import datetime, timezone, timedelta
 
 class RecieverNode:
 
@@ -56,6 +57,11 @@ class RecieverNode:
                         longitude = pos.get("longitude")
                         altitude = pos.get("altitude")
                         timestamp = pos.get("time")
+                        track_time = datetime.fromtimestamp(timestamp, timezone.utc)
+                        timeout = datetime.now(timezone.utc) - timedelta(seconds=3)
+                        if track_time < timeout:
+                            print("Dropping message: older than 3 seconds.")
+                            return
                         add_track_to_queue(
                             translate_meshtastic_position_to_tak_track(from_id, short_name, latitude, longitude, altitude, timestamp)
                         )

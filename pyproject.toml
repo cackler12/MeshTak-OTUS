@@ -9,6 +9,8 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "pytak",
+    "pytak[with_aiohttp]",
+    "pytak[with_crypto]",
     "asyncio",
     "pyyaml",
     "meshtastic",

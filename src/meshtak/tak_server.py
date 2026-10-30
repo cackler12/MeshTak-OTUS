@@ -4,54 +4,59 @@ import asyncio, pytak, time
 
 tak_connected = False
 
-async def connect_to_tak_server():
+config = ConfigParser()
 
-    try:
-        config = ConfigParser()
-        
-        config["tak"] = {
-            "COT_URL": "tls://takserver:8089",
-            "PYTAK_TLS_CLIENT_CERT": "/app/certs/meshTak.pem",
-            "PYTAK_TLS_CLIENT_KEY": "/app/certs/meshTak.key",
-            "PYTAK_TLS_CLIENT_CAFILE": "/app/certs/root-ca.pem",
-            "PYTAK_TLS_CLIENT_PASSWORD": "atakatak",
-            "DEBUG": "1"
-        }
+config["tak"] = {
+    "COT_URL": "tls://192.168.100.110:8089",
+    "PYTAK_TLS_DONT_CHECK_HOSTNAME": "1",
+    "PYTAK_TLS_CLIENT_CERT": "/app/certs/meshtak.pem",
+    "PYTAK_TLS_CLIENT_KEY": "/app/certs/meshtak.key",
+    "PYTAK_TLS_CLIENT_CAFILE": "/app/certs/ca-trusted.pem",
+    "PYTAK_TLS_CLIENT_PASSWORD": "atakatak",
+    "DEBUG": "0"
+}
 
-        cfg = config["tak"]
-
-        clitool = pytak.CLITool(cfg)
-        await clitool.setup()
-        
-        clitool.add_tasks(
-            {TakSender(clitool.tx_queue, cfg)}
-        )
-
-        tak_connected = True
-        
-        print("Connected to TAK Server")
-
-        await clitool.run()
-
-    except Exception as error:
-        tak_connected = False
-        print("Tak Server connection encountered an error: retrying in 5 seconds...")
+cfg = config["tak"]
 
 
 class TakSender(pytak.QueueWorker):
 
     async def run(self):
         while True:
+            payload = await asyncio.to_thread(
+                repository.track_blocking_queue.get
+            )
+            try:
+                print("Sending message to PyTAK")
+                await self.put_queue(payload)
+            except Exception:
+                print("Failed to queue TAK message")
+                raise
+            finally:
+                repository.track_blocking_queue.task_done()
 
-            payload = repository.track_blocking_queue.get()
-            repository.track_blocking_queue.task_done()
 
-            await self.put_queue(payload)
+async def connect_to_tak_server():
+    clitool = None
+    try:
+        clitool = pytak.CLITool(cfg)
+        await clitool.setup()
+        clitool.add_tasks({
+            TakSender(clitool.tx_queue, cfg)
+        })
+        print("Connected to TAK Server")
+        await clitool.run()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        print("TAK Server connection encountered an error")
+    finally:
+        print("TAK connection closed")
 
-            await asyncio.sleep(1)
 
 async def start():
-    while (True):
+    while True:
         await connect_to_tak_server()
-        time.sleep(5)
+        print("Retrying TAK connection in 5 seconds...")
+        await asyncio.sleep(5)
     

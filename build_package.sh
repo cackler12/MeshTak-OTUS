@@ -13,11 +13,13 @@ docker save -o $package_name-$version.tar $package_name:arm64
 echo "Building deb package"
 
 mkdir -p $package_name-$version-$arch/usr/bin/meshtak/dist
+mkdir -p $package_name-$version-$arch/usr/bin/meshtak/certs
 mkdir -p $package_name-$version-$arch/DEBIAN
 
 cp $package_name-$version.tar $package_name-$version-$arch/usr/bin/meshtak/dist
 cp docker/docker-compose.yml $package_name-$version-$arch/usr/bin/meshtak
 cp pkg/meshtak.service $package_name-$version-$arch/usr/bin/meshtak
+cp certs/* $package_name-$version-$arch/usr/bin/meshtak/certs
 cp pkg/control pkg/prerm pkg/postinst $package_name-$version-$arch/DEBIAN/
 
 dpkg-deb --build $package_name-$version-$arch

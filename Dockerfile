@@ -25,5 +25,7 @@ COPY README.md README.md
 # Install the project itself
 RUN uv sync --frozen
 
+EXPOSE 8089 8000
+
 # Run the configured project entry point
 CMD ["/app/.venv/bin/meshtak"]

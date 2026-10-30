@@ -9,4 +9,4 @@ def index():
     return render_template('index.html')
 
 def start():
-    serve(app, host="0.0.0.0", port=8000)
+    serve(app, host="192.168.100.110", port=8000)
